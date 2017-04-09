@@ -13,6 +13,11 @@
     Runs on KMP Electronics ProDINo Wroom (WiFi ESP8266)
 
 ***************************************************************************/
+// RESET OGNI 20 MIN SE NON E' COLLEGATO AL GATEWAY
+//#define  VNET_RESETTIME_INSKETCH
+//#define VNET_RESETTIME      0x00042F7 // ((20 Min*60)*1000)/70ms = 17143 => 42F7
+//#define VNET_HARDRESET      ESP.reset()
+
 
 // Let the IDE point to the Souliss framework
 #include "SoulissFramework.h"
@@ -22,14 +27,10 @@
 #include "conf/Webhook.h"                   // Enable DHCP and DNS
 #include "conf/DynamicAddressing.h"         // Use dynamic address
 
-
-
-
 // **** Define the WiFi name and password ****
 #define WIFICONF_INSKETCH
 #define WiFi_SSID               "MisiSpot"
 #define WiFi_Password           "multiactivity"    
-
 
 // Include framework code and libraries
 #include <SPI.h>
@@ -40,8 +41,8 @@
 /*** All configuration includes should be above this line ***/ 
 #include "Souliss.h"
 
-#define DHTTYPE DHT11   // DHT 11
-#define DHTPIN  5         // what digital pin we're connected to
+#define DHTTYPE DHT11   // Tipo di sensore DHT 11
+#define DHTPIN  5         // PIN D0 GROOVE
 
 // DHT sensor
 DHT dht(DHTPIN, DHTTYPE, 11); // for ESP8266 use dht(DHTPIN, DHTTYPE, 11)
@@ -50,7 +51,7 @@ DHT dht(DHTPIN, DHTTYPE, 11); // for ESP8266 use dht(DHTPIN, DHTTYPE, 11)
 #define LIGHT2                  1           
 #define LIGHT3                  2           
 #define LIGHT4                  3
-#define OUT1                    4           // This is the memory slot used for the execution of the logic
+#define OUT1                    4           
 #define OUT2                    5           
 #define OUT3                    6           
 #define OUT4                    7
@@ -62,7 +63,7 @@ DHT dht(DHTPIN, DHTTYPE, 11); // for ESP8266 use dht(DHTPIN, DHTTYPE, 11)
 void setup()
 {   
     // Init the board
-    delay(180000); // Ritardo
+    delay(180000); // Ritardo di setup per permettere al router di effettuare il boot
     InitDINo();
 
     // Connect to the WiFi network and get an address from DHCP
@@ -115,11 +116,42 @@ void loop()
             Logic_SimpleLight(OUT1);
             Logic_SimpleLight(OUT2);
             Logic_SimpleLight(OUT3);
-            Logic_SimpleLight(OUT4);
-            
-            
+            Logic_SimpleLight(OUT4);      
         } 
-        
+        FAST_91110ms() {
+        //ci ho anche aggiunto verifica ogni 90 sec (fast 91110) che la ESP sia collegata alla rete Wifi (5 tentativi al 6^fa hard reset):
+          //WL_NO_SHIELD = 255,
+          //WL_IDLE_STATUS = 0,
+          //WL_NO_SSID_AVAIL = 1
+          //WL_SCAN_COMPLETED = 2
+          //WL_CONNECTED = 3
+          //WL_CONNECT_FAILED = 4
+          //WL_CONNECTION_LOST = 5
+          //WL_DISCONNECTED = 6
+                    
+          int tent=0;
+          Serial.println("Verifico connessione WIFI");
+          Serial.println(WiFi.status());
+          while ((WiFi.status() != WL_CONNECTED) && tent<9)
+              {
+                Serial.println("WIFI non connessa");
+                WiFi.disconnect();
+                WiFi.mode(WIFI_STA);
+                WiFi.begin(WiFi_SSID , WiFi_Password);
+                int ritardo =0;
+                while ((WiFi.status() != WL_CONNECTED) && ritardo<20)
+                    {
+                      delay(5000);  
+                      ritardo +=1;
+                      Serial.println(ritardo);
+                      }
+                if (WiFi.status() != WL_CONNECTED ) 
+                delay(2000); 
+                tent +=1;
+              }
+        if (tent>8)Serial.println("Tentativo di riconnessione non riuscito");
+        if (tent=0)Serial.println("WIFI connessa");
+        }   
         // Here we process all communication with other nodes
         FAST_GatewayComms();    
     }
@@ -136,7 +168,7 @@ void loop()
             Logic_Humidity(HUMIDITY);
             Logic_Temperature(TEMP0);
         }  
-     SLOW_50s()  {
+        SLOW_50s()  {
           float humidity = dht.readHumidity();
           float temperature = dht.readTemperature(false);
           if (!isnan(humidity) || !isnan(temperature)) {
